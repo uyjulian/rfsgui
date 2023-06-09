@@ -1,4 +1,5 @@
 *.o
-rfstool
+*/rfstool
+!*/rfstool/
 *.exe
 
