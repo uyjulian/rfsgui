@@ -30,7 +30,7 @@ BOOL PSimulatedDriveFromBackupFile::GetDriveLayoutEx( LPBYTE lpbMemory, DWORD dw
 }
 #endif
 
-BOOL PSimulatedDriveFromBackupFile::Open(LONG_PTR iDrive)
+BOOL PSimulatedDriveFromBackupFile::Open( int iDrive )
 {
     return m_Metafile.Open( NULL, m_strFilename );
 }

@@ -1,7 +1,13 @@
-//MPA 5-1-2005
-//64bit
 #include "precomp.h"
 #include "gtools.h"
+#include "stdarg.h"
+#ifdef _WIN32
+#include "direct.h"
+#else
+#include "sys/stat.h"
+#include "sys/types.h"
+#include "unistd.h"
+#endif
 
 PList::PList()
 {
@@ -218,14 +224,14 @@ inline void PString::DeleteStringData()
 }
 
 
-void PString::Append( const char * pString, ULONG32 dwSize )
+void PString::Append( const char* pString, unsigned long dwSize )
 {
     // *NOT* optimized
 
-    SIZE_T dwCombinedLength = m_iStringLength + dwSize;
+    unsigned long dwCombinedLength = m_iStringLength + dwSize;
     if( dwCombinedLength && dwSize )
     {
-        char * lpszData = new char[ dwCombinedLength + 2 ];
+        char* lpszData = new char[ dwCombinedLength + 2 ];
         if( m_lpszData && m_iStringLength )
             strcpy( lpszData, m_lpszData );
         strncpy( lpszData+m_iStringLength, pString, dwSize );
@@ -238,7 +244,7 @@ void PString::Append( const char * pString, ULONG32 dwSize )
 }
 
 
-PString::PString( const char * lpszArgument )
+PString::PString( const char* lpszArgument )
 {
     CopyStringData( lpszArgument );
 }
@@ -248,7 +254,7 @@ PString::PString( const PString& objectSrc )
     CopyStringData( objectSrc.m_lpszData );
 }
 
-PString::PString( LONG_PTR, const char * szFormat, ... )
+PString::PString( int, const char* szFormat, ... )
 {
     if( szFormat )
     {
@@ -271,7 +277,7 @@ PString::~PString()
     DeleteStringData();
 }
 
-void PString::sprintf( const char * szFormat, ... )
+void PString::sprintf( const char* szFormat, ... )
 {
     DeleteStringData();
     m_lpszData = 0;
@@ -287,7 +293,7 @@ void PString::sprintf( const char * szFormat, ... )
     }
 }
 
-void PString::vsprintf( const char * szFormat, va_list args )
+void PString::vsprintf( const char* szFormat, va_list args )
 {
     DeleteStringData();
     m_lpszData = 0;
@@ -301,7 +307,7 @@ void PString::vsprintf( const char * szFormat, va_list args )
     }
 } 
 
-PString& PString::operator=( const char * objectSrc )
+PString& PString::operator=( const char* objectSrc )
 {
     if( objectSrc != m_lpszData )
     {
@@ -320,6 +326,12 @@ PString& PString::operator=( PString& objectSrc )
     }
     return *this;
 }
+
+#ifdef _WIN32
+#include "windows.h" 
+#else
+#include "errno.h"
+#endif
 
 PString GetLastErrorString()
 {
@@ -464,7 +476,7 @@ BOOL MakeSurePathExists( LPCSTR lpszFileName )
                     }
                 }
                 #elif defined(TARGET_IS_UNIX)
-                INT32 result = mkdir( szBuffer, S_IRWXU|S_IRWXG|S_IRWXO );
+                int result = mkdir( szBuffer, S_IRWXU|S_IRWXG|S_IRWXO );
                 #endif
             }
             *lpszReadPosition = SLASH_CHAR;
@@ -485,7 +497,7 @@ BOOL MakeSurePathExists( LPCSTR lpszFileName )
             }
         }
         #else
-        INT32 result = mkdir( szBuffer, S_IRWXU|S_IRWXG|S_IRWXO );
+        int result = mkdir( szBuffer, S_IRWXU|S_IRWXG|S_IRWXO );
         #endif
     }
 

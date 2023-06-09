@@ -1,5 +1,3 @@
-#include "precomp.h"
-
 #ifndef REISER4WIN_H
 #define REISER4WIN_H
 
@@ -21,33 +19,31 @@ extern char* g_szUseSpecificDevice;
 #define TYPE_DIRECTORY 3 
 #define TYPE_ANY 15 // FIXME: comment is required
 
-//MPA 5-2-2005
-//64bit
-//Removed already declared defines
-
+#define S_IFMT       0170000     /* type of file (mask for following) */
+#define S_IFIFO      0010000     /* first-in/first-out (pipe) */
+#define S_IFCHR      0020000     /* character-special file */
+#define S_IFDIR      0040000     /* directory */
 #define S_IFBLK      0060000     /* blocking device (not used on NetWare) */
+#define S_IFREG      0100000     /* regular */
 #define S_IFLNK      0120000     /* symbolic link (not used on NetWare) */
 #define S_IFSOCK     0140000     /* Berkeley socket */
-#define S_IFIFO      0010000     /* first-in/first-out (pipe) */
 
-#define S_ISFIFO(m)  (((m) & S_IFMT) == S_IFIFO)   // (e.g.: pipe)
-#define S_ISCHR(m)   (((m) & S_IFMT) == S_IFCHR)   // (e.g.: console)
+#define S_ISFIFO(m)  (((m) & S_IFMT) == S_IFIFO)   /* (e.g.: pipe) */
+#define S_ISCHR(m)   (((m) & S_IFMT) == S_IFCHR)   /* (e.g.: console) */
 #define S_ISDIR(m)   (((m) & S_IFMT) == S_IFDIR)
-#define S_ISBLK(m)   (((m) & S_IFMT) == S_IFBLK)   // (e.g.: pipe)
+#define S_ISBLK(m)   (((m) & S_IFMT) == S_IFBLK)   /* (e.g.: pipe) */
 #define S_ISREG(m)   (((m) & S_IFMT) == S_IFREG)
-#define S_ISLNK(m)   (((m) & S_IFMT) == S_IFLNK)   // should be FALSE
-#define S_ISSOCK(m)  (((m) & S_IFMT) == S_IFSOCK)  // (e.g.: socket)
+#define S_ISLNK(m)   (((m) & S_IFMT) == S_IFLNK)   /* should be FALSE */
+#define S_ISSOCK(m)  (((m) & S_IFMT) == S_IFSOCK)  /* (e.g.: socket) */
 
-//MPA 5-2-2005
-//64bit
-//Redefined 32 & 64-bit types to new standard
-
+typedef unsigned long U32;
 typedef unsigned short U16;
-typedef ULONG32 U32;
-typedef ULONG64 U64;
+#ifdef _MSC_VER
+typedef unsigned __int64 U64;
+#else
+typedef unsigned long long U64;
+#endif
 
-//MPA 11-9-2005: redefined MB converter parameter as function
-double PBytesInMBytes(U64 bytes);
 
 typedef struct reiserfs_super_block
 {
@@ -224,7 +220,7 @@ typedef struct {
 
 
 typedef struct { // (Pointer to disk block) Field Name Type Size (in bytes) Description 
-U32 dc_block_number; //  ULONG32 4  Disk child's block number. 
+U32 dc_block_number; //  unsigned long 4  Disk child's block number. 
 U16 dc_size; // unsigned short  2  Disk child's used space. 
 U16 dc_reserved;
 } REISERFS_DISK_KEY, *LPREISERFS_DISK_KEY;
@@ -261,7 +257,7 @@ class ReiserFsFileInfo : public PNode
 
 class ReiserFsPartition;
 
-typedef void (WINAPI* LPFNReiserFsSearchCallback)(ReiserFsPartition* pPartition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, INT32 nSize, void* lpContext );
+typedef void (WINAPI* LPFNReiserFsSearchCallback)(ReiserFsPartition* pPartition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, int nSize, void* lpContext );
 
 class ReiserFsBlock : public PNode
     {
@@ -291,8 +287,8 @@ class ReiserFsMetafile
 		BOOL Open( ReiserFsPartition* pPartition, const char* pszFilename );
 		BOOL Read( LPBYTE lpbMemory, DWORD dwSize, INT64 BlockNumber );
 		
-		INT32 m_iNumberOfIndices;
-		LONG_PTR *m_pBlockIndices;
+		int m_iNumberOfIndices;
+		int* m_pBlockIndices;
 		FILE* m_pDataFile;
 		DWORD m_dwBlocksize;
         REISERFS_SUPER_BLOCK m_Superblock;
@@ -307,23 +303,23 @@ class ReiserFsPartition
     public:
         ReiserFsPartition();
         virtual ~ReiserFsPartition();
-        virtual bool Open( LONG_PTR iDrive, LONG_PTR iPartition );
-        virtual void Autodetect( LONG_PTR iMaxDrive = 10, LPFNFoundPartition lpCallback = NULL, LPVOID lpContext = NULL );
-		virtual void AutodetectFirstUsable( LONG_PTR piPartition, LONG_PTR piDrive );
+        virtual bool Open( int iDrive, int iPartition );
+        virtual void Autodetect( int iMaxDrive = 10, LPFNFoundPartition lpCallback = NULL, LPVOID lpContext = NULL );
+		virtual void AutodetectFirstUsable( int* piPartition, int* piDrive );
         virtual BOOL Read( LPBYTE lpbMemory, DWORD dwSize, INT64 BlockNumber );
         virtual LPBYTE GetBlock( DWORD BlockNumber );
-        virtual void ParseTreeRecursive( BOOL* lpbSuccess, REISERFS_CPU_KEY* lpKeyToFind, INT32 nBlock, LPFNReiserFsSearchCallback lpCallback, void* lpContext );
-        virtual bool ListDir( PList* pDirectory, LPSTR lpszDirectory );
-        virtual bool GetFile( LPSTR lpszReiserFsName, LPSTR lpszLocalName, bool bRecurseSubdirectories );
-        virtual bool GetFileEx( LPSTR lpszReiserFsName, ICreateFileInfo* pCFI );
-		bool CopyFilesRecursive( PList* Directory, LPSTR lpszName, bool bRecurseSubdirectories );
+        virtual void ParseTreeRecursive( BOOL* lpbSuccess, REISERFS_CPU_KEY* lpKeyToFind, int nBlock, LPFNReiserFsSearchCallback lpCallback, void* lpContext );
+        virtual bool ListDir( PList* pDirectory, LPCSTR lpszDirectory );
+        virtual bool GetFile( LPCSTR lpszReiserFsName, LPCSTR lpszLocalName, bool bRecurseSubdirectories );
+        virtual bool GetFileEx( LPCSTR lpszReiserFsName, ICreateFileInfo* pCFI );
+		bool CopyFilesRecursive( PList* Directory, LPCSTR lpszName );
 		void DumpTree();
 		void Backup( const char* pszFilename );
 		BOOL PrepareForRestore( const char* pszFilename );
         PString GetFileAsString( ReiserFsFileInfo* pFile );
         bool CheckReiserFsPartition();
-		void DumpTreeRecursive(INT32 nBlock,INT32 nIndent);
-		void BackupTreeRecursive(FILE* fpData, FILE* fpIndex, INT32 nBlock);
+		void DumpTreeRecursive(int nBlock,int nIndent);
+		void BackupTreeRecursive(FILE* fpData, FILE* fpIndex, int nBlock);
 		LPBYTE GetBlockUncached( DWORD BlockNumber );
 
         PList m_BlockCache;
@@ -334,12 +330,12 @@ class ReiserFsPartition
         REISERFS_SUPER_BLOCK m_sb;
 		ReiserFsMetafile m_Metafile;
 
-		BOOL IParseTreeRecursive( INT32 nBlock );
+		BOOL IParseTreeRecursive( int nBlock );
 
 		REISERFS_CPU_KEY* m_lpKeyToFind;
 		LPFNReiserFsSearchCallback m_lpCallback;
 		void* m_lpContext;
-		INT32 m_nIndent;
+		int m_nIndent;
     };
 
 extern void TRACE(const char*, ...);

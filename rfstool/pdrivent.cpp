@@ -1,5 +1,6 @@
 #include "precomp.h"
 #include "physicaldrive.h"
+#include "assert.h"
 #include "reiserfs.h"
 #include "pdrivent.h"
 
@@ -55,7 +56,7 @@ BOOL PNtPhysicalDrive::GetDriveGeometry( DISK_GEOMETRY* lpDG )
 } // GetDriveGeometry()
 
 
-BOOL PNtPhysicalDrive::Open( LONG_PTR iDrive )
+BOOL PNtPhysicalDrive::Open( int iDrive )
 {
     if(m_hDevice != INVALID_HANDLE_VALUE)
 	{

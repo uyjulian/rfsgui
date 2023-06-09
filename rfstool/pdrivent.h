@@ -8,7 +8,7 @@ class PNtPhysicalDrive : public IPhysicalDrive
     public:
         PNtPhysicalDrive();
         virtual ~PNtPhysicalDrive();
-        virtual BOOL Open( LONG_PTR iDrive );
+        virtual BOOL Open( int iDrive );
 		virtual void Close();
         virtual BOOL GetDriveGeometry( DISK_GEOMETRY* lpDG );
         virtual BOOL GetDriveLayout( LPBYTE lpbMemory, DWORD dwSize );

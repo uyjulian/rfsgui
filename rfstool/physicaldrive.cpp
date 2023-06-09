@@ -1,8 +1,13 @@
 #include "precomp.h"
 #include "physicaldrive.h"
+#include "assert.h"
 #include "reiserfs.h"
+#ifdef _WIN32
+#include "pdrive95.h"
 #include "pdrivent.h"
+#else
 #include "pdriveposix.h"
+#endif
 
 #ifdef _WIN32
 typedef enum
@@ -62,9 +67,19 @@ WINDOWS_VERSION RefreshWindowsVersion()
 	return IS_WINDOWS_UNKNOWN;
 }
 
+static WINDOWS_VERSION wv;
+
 IPhysicalDrive* CreatePhysicalDriveInstance()
 {
-	return new PNtPhysicalDrive();
+	wv = RefreshWindowsVersion();
+	if( (wv == IS_WINDOWS_NT) || (wv == IS_WINDOWS_2000) || (wv == IS_WINDOWS_XP) )
+	{
+		return new PNtPhysicalDrive();
+	}
+	else 
+	{
+		return new P9xPhysicalDrive();
+	}
 }
 #else
 IPhysicalDrive* CreatePhysicalDriveInstance()
@@ -132,7 +147,7 @@ void IPhysicalDrive::DumpDriveInfo( LPCSTR lpszDrive )
     {
         PDRIVE_LAYOUT_INFORMATION_EX pLI = (PDRIVE_LAYOUT_INFORMATION_EX)bLayout;
 
-		printf("Got XP DRIVE_LAYOUT_INFORMATION_EX\n\n" );
+		printf("Got DRIVE_LAYOUT_INFORMATION_EX\n\n" );
 		printf("    PartitionCount = %d\n", pLI->PartitionCount );
 
 		if( pLI->PartitionStyle == PARTITION_STYLE_GPT )
@@ -155,7 +170,7 @@ void IPhysicalDrive::DumpDriveInfo( LPCSTR lpszDrive )
 			printf("    PartitionStyle = %d (RAW)\n", pLI->PartitionStyle );
 		}
 
-        for( ULONG32 ulPartition = 0; ulPartition < pLI->PartitionCount; ulPartition++ )
+        for( unsigned long ulPartition = 0; ulPartition < pLI->PartitionCount; ulPartition++ )
         {
 			PARTITION_INFORMATION_EX& p = pLI->PartitionEntry[ulPartition];	
 
@@ -165,7 +180,7 @@ void IPhysicalDrive::DumpDriveInfo( LPCSTR lpszDrive )
 			printf("\n    --- PARTITION %d ---\n\n", ulPartition );
 
 			printf("    PartitionStart = %" FMT_QWORD "\n", p.StartingOffset.QuadPart );
-			printf("    PartitionLength = %" FMT_QWORD " (%g MB)\n", p.PartitionLength.QuadPart, PBytesInMBytes(p.PartitionLength.QuadPart) );
+			printf("    PartitionLength = %" FMT_QWORD " (%.2f MB)\n", p.PartitionLength.QuadPart, PBytesInMBytes(p.PartitionLength.QuadPart) );
 
     		if( pLI->PartitionStyle == PARTITION_STYLE_GPT )
 			{
@@ -219,11 +234,11 @@ void IPhysicalDrive::DumpDriveInfo( LPCSTR lpszDrive )
     {
         PDRIVE_LAYOUT_INFORMATION pLI = (PDRIVE_LAYOUT_INFORMATION)bLayout;
 
-		printf("Got NonXP DRIVE_LAYOUT_INFORMATION\n\n" );
+		printf("Got DRIVE_LAYOUT_INFORMATION\n\n" );
 		printf("    PartitionCount = %d\n", pLI->PartitionCount );
 		printf("    Signature = 0x%08lx\n", pLI->Signature );
 
-        for( ULONG32 ulPartition = 0; ulPartition < pLI->PartitionCount; ulPartition++ )
+        for( unsigned long ulPartition = 0; ulPartition < pLI->PartitionCount; ulPartition++ )
         {
 			PARTITION_INFORMATION& p = pLI->PartitionEntry[ulPartition];
 
@@ -278,105 +293,3 @@ void IPhysicalDrive::DumpDriveInfo( LPCSTR lpszDrive )
         return;
     }
 }
-
-//RFSGUI: Modified DumpDriveInfo to provide an array list of ReiserFS partitions
-LONG_PTR IPhysicalDrive::GetDriveList(LONG_PTR * infoArray)
-{
-	// Original variables
-    BYTE bLayout[20240];
-	DWORD BytesPerSector = 512;
-	DWORD intPartition = 0;
-	BOOL gotlayout = false;
-	INT32 counter = 0;
-
-	#ifdef SUPPORT_WINDOWS_XP_PARTITIONS
-    if( GetDriveGeometryEx( (DISK_GEOMETRY_EX*) bLayout, sizeof(bLayout) ) )
-    {
-        DISK_GEOMETRY_EX* pDG = (DISK_GEOMETRY_EX*) bLayout;
-		BytesPerSector = pDG->Geometry.BytesPerSector;
-    }
-	#endif
-	#ifndef SUPPORT_WINDOWS_XP_PARTITIONS
-    if( GetDriveGeometry(&dg) )
-    {
-		DISK_GEOMETRY dg;
-		INT64 DiskSize = dg.BytesPerSector;
-		DiskSize *= dg.SectorsPerTrack;
-		DiskSize *= dg.TracksPerCylinder;
-		DiskSize *= dg.Cylinders.QuadPart;
-		BytesPerSector = dg.BytesPerSector;
-    }
-	#endif
-
-    // Original partition-listing-prep
-    BYTE* bMemory = new BYTE[BytesPerSector*2];
-	assert(bMemory != NULL);
-	memset( bMemory, 0, BytesPerSector*2 );   
-    memset( bLayout, 0, sizeof(bLayout) );
-
-	// Get drive layout & partition data based on XP or not
-	#ifdef SUPPORT_WINDOWS_XP_PARTITIONS
-	gotlayout = GetDriveLayoutEx(bLayout, sizeof(bLayout));
-	PDRIVE_LAYOUT_INFORMATION_EX pLI = (PDRIVE_LAYOUT_INFORMATION_EX)bLayout;
-	#endif
-	
-	#ifndef SUPPORT_WINDOWS_XP_PARTITIONS
-	gotlayout = GetDriveLayout(bLayout, sizeof(bLayout));
-	PDRIVE_LAYOUT_INFORMATION pLI = (PDRIVE_LAYOUT_INFORMATION)bLayout;
-	#endif
-
-	
-	// Has drive layout
-	if(gotlayout > -1)
-    {
-		// Iterate through all the partitions
-        for(intPartition = 0; intPartition < pLI->PartitionCount; intPartition++ )
-        {
-			// Get information for each partition
-			#ifdef SUPPORT_WINDOWS_XP_PARTITIONS
-			PARTITION_INFORMATION_EX& p = pLI->PartitionEntry[intPartition];
-			#endif
-			#ifndef SUPPORT_WINDOWS_XP_PARTITIONS
-			PARTITION_INFORMATION& p = pLI->PartitionEntry[intPartition];
-			#endif
-
-			INT64 diskoffset = (p.StartingOffset.QuadPart + REISERFS_DISK_OFFSET_IN_BYTES);
-			if( !ReadAbsolute(bMemory, BytesPerSector, diskoffset ) )
-			{
-				return counter;
-			}
-			else
-			{
-				// Determine ReiserFS version
-				LPREISERFS_SUPER_BLOCK rfsp = (LPREISERFS_SUPER_BLOCK) bMemory;
-				if( stricmp(rfsp->s_magic,REISERFS_SUPER_MAGIC_STRING) )
-				{
-					// Not ReiserFS
-					if( stricmp(rfsp->s_magic,REISER2FS_SUPER_MAGIC_STRING) )
-					{
-					infoArray[intPartition] = 0;
-					}
-					// ReiserFS V2
-					else
-					{
-					infoArray[intPartition] = 2;
-					counter++;
-					}
-				}
-				// ReiserFS V1
-				else
-				{
-				infoArray[intPartition] = 1;
-				counter++;
-				}
-			}
-
-        }
-
-    }
-
-
-	// Return array
-	return counter;
-
-} // End Modification

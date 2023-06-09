@@ -24,6 +24,8 @@ class PNode
         PNode* m_pPrevious;
     };
 
+typedef unsigned long ULONG;
+
 class PList : public PNode
     {
     public:
@@ -53,33 +55,38 @@ class PString : public PNode
     {
     public:
         PString();
-        PString( const char * szFormat );
-        PString( LONG_PTR, const char * szFormat, ... );
+        PString( const char* szFormat );
+        PString( int, const char* szFormat, ... );
         PString( const PString& objectSrc );
         virtual ~PString();
-        void sprintf( const char * szFormat, ... );
-        void vsprintf( const char * szFormat, va_list args );
-        PString& operator=( const char * objectSrc );
+        void sprintf( const char* szFormat, ... );
+        void vsprintf( const char* szFormat, va_list args );
+        PString& operator=( const char* objectSrc );
         PString& operator=( PString& objectSrc );
 
-        void Append( const char * pString, ULONG32 ulSize );
+        void Append( const char* pString, unsigned long ulSize );
         
-        inline operator char *()
+        inline operator char*()
         {
             return m_lpszData;
         }
 
-        inline SIZE_T GetLength()
+//        inline operator const char*() const
+//        {
+//            return m_lpszData;
+//        }
+        
+        inline int GetLength()
         {
             return m_iStringLength;
         }
 
     protected:
         void DeleteStringData();
-        void CopyStringData(const char * lpszFrom);
+        void CopyStringData(const char* lpszFrom);
 
-        SIZE_T m_iStringLength;
-        char * m_lpszData;
+        int m_iStringLength;
+        char* m_lpszData;
         char m_szFixedBuffer[256];
     };
 

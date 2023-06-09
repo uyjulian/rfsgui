@@ -1,6 +1,9 @@
 #include "precomp.h"
 #include "reiserfs.h"
+#include "string.h"
+#include "assert.h"
 #include "pdrivefile.h"
+#include "time.h"
 
 #define MAXLOOPTRY 10245
 
@@ -9,14 +12,6 @@
 #endif
 
 #define SIZE_OF_LAYOUT_BLOCK 20240
-
-
-//MPA 11-9-2005: redefined MB converter parameter as function
-double PBytesInMBytes(U64 bytes)
-{
-	return (double)(bytes / 1048576);
-}
-
 
 class LayoutBlock
     {
@@ -31,7 +26,7 @@ class LayoutBlock
             return (m_lpbData != NULL);
         }
 
-        INT32 getSize()
+        int getSize()
         {
             return SIZE_OF_LAYOUT_BLOCK;
         }
@@ -46,13 +41,13 @@ class LayoutBlock
             delete [] m_lpbData;
         }
     protected:
-        INT32 m_nSize;
+        int m_nSize;
         LPBYTE m_lpbData;
     };
 
 DWORD dwTypeDirect = (DWORD) -1;
 DWORD dwTypeIndirect = (DWORD) -2;
-
+#ifdef _WIN32
 void FileTimeFromUnixTime(FILETIME* pf, U32 unixtime )
 {
     struct tm* t = localtime((const time_t*) &unixtime );
@@ -71,11 +66,11 @@ void FileTimeFromUnixTime(FILETIME* pf, U32 unixtime )
         SystemTimeToFileTime(&st, pf);
     }
 }
+#endif
 
-//MPA: 5-2-2005
-//64bit
-void SetUnixFileTime( LPSTR lpszPath, ReiserFsFileInfo* pFile )
+void SetUnixFileTime( LPCSTR lpszPath, ReiserFsFileInfo* pFile )
 {
+#ifdef _WIN32
     FILETIME f_atime, f_mtime, f_ctime;
 
     FileTimeFromUnixTime(&f_atime, pFile->m_stat.sd_atime );
@@ -88,8 +83,8 @@ void SetUnixFileTime( LPSTR lpszPath, ReiserFsFileInfo* pFile )
         SetFileTime(hFile, &f_ctime, &f_atime, &f_mtime );
         CloseHandle(hFile);
     } 
+#endif
 }
-
 ReiserFsFileInfo::ReiserFsFileInfo(REISERFS_DIRECTORY_HEAD* pDH, LPCSTR lpszName)
 {
 	DEBUGTRACE(("FOUND FILE %s\n", lpszName))
@@ -107,7 +102,7 @@ ReiserFsFileInfo::ReiserFsFileInfo(REISERFS_DIRECTORY_HEAD* pDH, LPCSTR lpszName
 
 }
 
-INT32 comp_keys(REISERFS_CPU_KEY* a, REISERFS_CPU_KEY *b)
+int comp_keys(REISERFS_CPU_KEY* a, REISERFS_CPU_KEY *b)
 {
     if( a->k_dir_id < b->k_dir_id )
         return -1;
@@ -128,7 +123,7 @@ INT32 comp_keys(REISERFS_CPU_KEY* a, REISERFS_CPU_KEY *b)
 	return 0;
 }
 
-INT32 comp_keys_no_offset (REISERFS_CPU_KEY * le_key, REISERFS_CPU_KEY * cpu_key)
+int comp_keys_no_offset (REISERFS_CPU_KEY * le_key, REISERFS_CPU_KEY * cpu_key)
 {
   if( le_key->k_dir_id < cpu_key->k_dir_id )
 	return -1;
@@ -189,14 +184,14 @@ bool ReiserFsPartition::CheckReiserFsPartition()
     return true;
 }
 
-void ReiserFsPartition::AutodetectFirstUsable( LONG_PTR piPartition, LONG_PTR piDrive )
+void ReiserFsPartition::AutodetectFirstUsable( int* piPartition, int* piDrive )
 {
     DISK_GEOMETRY dg;
     LayoutBlock layout;
 
 	printf("No drives specified, performing an autodetect...\n" );
 
-    for( INT32 iDrive = 0; iDrive < 10; iDrive++ )
+    for( int iDrive = 0; iDrive < 10; iDrive++ )
     {
         if( !m_pDrive->Open(iDrive) ) 
             continue;
@@ -250,8 +245,8 @@ void ReiserFsPartition::AutodetectFirstUsable( LONG_PTR piPartition, LONG_PTR pi
                 m_PartitionStartingOffset = pLI->PartitionEntry[iPartition].StartingOffset.QuadPart;
                 if( CheckReiserFsPartition() )
                 {
-					piPartition = iPartition;
-					piDrive = iDrive;
+					*piPartition = iPartition;
+					*piDrive = iDrive;
                     printf( "Drive %d, Partition %d is a ReiserFS -> using that\n",iDrive, iPartition );
                     printf( "Partition Size: %" FMT_QWORD " Bytes (%.2f MB)\n", 
                         pLI->PartitionEntry[iPartition].PartitionLength.QuadPart, 
@@ -268,12 +263,12 @@ void ReiserFsPartition::AutodetectFirstUsable( LONG_PTR piPartition, LONG_PTR pi
     }
 }
 
-void ReiserFsPartition::Autodetect( LONG_PTR iMaxDrive, LPFNFoundPartition lpCallback, LPVOID lpContext )
+void ReiserFsPartition::Autodetect( int iMaxDrive, LPFNFoundPartition lpCallback, LPVOID lpContext )
 {
     DISK_GEOMETRY dg;
     LayoutBlock layout;
 
-    for( LONG_PTR iDrive = 0; iDrive < 10; iDrive++ )
+    for( int iDrive = 0; iDrive < 10; iDrive++ )
     {
         if( !m_pDrive->Open(iDrive) ) 
             continue;
@@ -360,7 +355,7 @@ void ReiserFsPartition::Autodetect( LONG_PTR iMaxDrive, LPFNFoundPartition lpCal
     }
 }
 
-bool ReiserFsPartition::Open( LONG_PTR iDrive, LONG_PTR iPartition )
+bool ReiserFsPartition::Open( int iDrive, int iPartition )
 {
     if( iDrive == USE_BACKUP_FILENAME )
     {
@@ -402,7 +397,7 @@ bool ReiserFsPartition::Open( LONG_PTR iDrive, LONG_PTR iPartition )
         printf("Got newstyle partition information, assuming Windows XP\n" );
 
         PDRIVE_LAYOUT_INFORMATION_EX pLI = (PDRIVE_LAYOUT_INFORMATION_EX)layout.getData();
-        if( iPartition < 0 || iPartition >= (INT32) pLI->PartitionCount )
+        if( iPartition < 0 || iPartition >= (int) pLI->PartitionCount )
         {
             printf("ERROR, drive only has partitions [0..%d]\n", pLI->PartitionCount ); 
             return false;
@@ -414,7 +409,7 @@ bool ReiserFsPartition::Open( LONG_PTR iDrive, LONG_PTR iPartition )
     if( m_pDrive->GetDriveLayout(layout.getData(), layout.getSize()) )
     {
         PDRIVE_LAYOUT_INFORMATION pLI = (PDRIVE_LAYOUT_INFORMATION)layout.getData();
-        if( iPartition < 0 || iPartition >= (INT32) pLI->PartitionCount )
+        if( iPartition < 0 || iPartition >= (int) pLI->PartitionCount )
         {
             printf("ERROR, drive only has partitions [0..%d]\n", pLI->PartitionCount ); 
             return false;
@@ -456,17 +451,108 @@ bool ReiserFsPartition::Open( LONG_PTR iDrive, LONG_PTR iPartition )
 		dwTypeIndirect = (DWORD) -2;
 	}
     memcpy(&m_sb,p,sizeof(REISERFS_SUPER_BLOCK));
+
+//	{ // code to dump a directory item
+//		BYTE bMemory[559];
+//		//FILE* fp = fopen("T:\\dir\\8211.007.dat","rb");
+//		FILE* fp = fopen(TARGETDIR "dir\\10708.004.dat","rb");
+//		fread(bMemory,1,103,fp);
+//		bMemory[103] = 0;
+//		fclose(fp);
+//		int dh_offset = 0;
+//		int dh_strpos = 103;
+//		int i = 0;
+//
+//		while( dh_offset < dh_strpos )
+//		{
+//			printf(" ----------------- %d --------------------\n", i++ );
+//			REISERFS_DIRECTORY_HEAD* pDH = (REISERFS_DIRECTORY_HEAD*) (bMemory+dh_offset);
+//
+//			printf(" deh_offset = %d\n", pDH->deh_offset);
+//			printf(" deh_dir_id = %d\n", pDH->deh_dir_id);
+//			printf(" deh_objectid = %d\n", pDH->deh_objectid);
+//			printf(" deh_location = %d\n", (int)pDH->deh_location);
+//			printf(" deh_state = %d\n", pDH->deh_state);
+//			printf(" name='%s'\n",bMemory+pDH->deh_location);
+//			printf("\n");
+//			(bMemory+pDH->deh_location)[0] = 0;
+//			dh_strpos = pDH->deh_location;
+//			dh_offset += sizeof(REISERFS_DIRECTORY_HEAD);
+//
+//		}
+//	}
+//
+
+	
+
+//
+//    m_dwBitmapSize = p->s_blocksize * p->s_bmap_nr;
+//    m_lpbBitmap = new BYTE[m_dwBitmapSize];
+//    if( !m_lpbBitmap )
+//    {
+//        printf("ERROR, unable to allocate %d bytes for bitmap information\n", m_dwBitmapSize ); 
+//        return false;
+//    }
+//
+//
+//    // read the whole bitmap in memory. The bitmap format is...well...weird.
+//    // The first block is at (REISERFS_DISK_OFFSET_IN_BYTES + p->s_blocksize)
+//    // all following blocks are at (8*p->s_blocksize*i)
+//
+//    INT64 iBitmapBlock = (m_pi.StartingOffset.QuadPart + REISERFS_DISK_OFFSET_IN_BYTES + p->s_blocksize) / m_dg.BytesPerSector;
+//
+//    // read first block
+//    if( m_pDrive->ReadSector(m_lpbBitmap,p->s_blocksize,iBitmapBlock) )
+//    {
+//        for( int iBlock = 1; iBlock < p->s_bmap_nr; iBlock++ )
+//        {
+//            INT64 faktor;
+//            INT64 offset = p->s_blocksize;
+//            offset *= offset;
+//            faktor = 8;
+//            offset *= faktor;
+//            faktor = iBlock;
+//            offset *= faktor;
+//            offset += m_pi.StartingOffset.QuadPart;
+//            offset /= m_dg.BytesPerSector;
+//            m_pDrive->ReadSector(m_lpbBitmap+(iBlock*p->s_blocksize),p->s_blocksize,offset);
+//        }
+//    }
+
+
+	//printf("p->s_root_block=%d\n", p->s_root_block );
+    // code to dump the whole directory structure
+
+	//DumpBlock(p->s_root_block,0);
+
+//	static REISERFS_CPU_KEY rootkey = { 1, 2, 1, 500 };
+//
+///*
+//~~>  dir_id = 2
+//~~>  objectid = 15
+//~~>  location = 422
+//~~>  state = 4
+//~~>  name = 'boot'
+//*/
+//
+//	static REISERFS_CPU_KEY bootkey = { 2, 17, 1, 500 };
+//    static REISERFS_CPU_KEY usrkey = { 2, 137, 1, 500 };
+//    static REISERFS_CPU_KEY includekey = { 79249, 80823, 1, 500 };
+//    static REISERFS_CPU_KEY filestat = { 80823, 80824, 1, -1 };
+    
+	//DWORD BlockNumber = FindBlockFromKey(&filestat,p->s_root_block);
+	
     return true;
 }
 
 void WINAPI ListDirCallback(ReiserFsPartition* partition, 
     REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, 
-    INT32 nSize, void* lpContext )
+    int nSize, void* lpContext )
 {
     PList* pDirectory = (PList*) lpContext;
-	INT32 dh_offset = 0;
-	INT32 dh_strpos = nSize;
-	INT32 i = 0, dh_strlen;
+	int dh_offset = 0;
+	int dh_strpos = nSize;
+	int i = 0, dh_strlen;
                                
     CHAR szTempBuffer[512];
 	while( dh_offset < dh_strpos )
@@ -483,7 +569,7 @@ void WINAPI ListDirCallback(ReiserFsPartition* partition,
 }
 
 
-void WINAPI GetFileStat(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, INT32 nSize, void* lpContext )
+void WINAPI GetFileStat(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, int nSize, void* lpContext )
 {
     ReiserFsFileInfo* pFile = (ReiserFsFileInfo*) lpContext;
 
@@ -515,7 +601,7 @@ typedef struct
     INT64 FileSize;
 } GETFILEINDIRECTCONTEXT;
 
-void WINAPI GetFileIndirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, INT32 nSize, void* lpContext )
+void WINAPI GetFileIndirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, int nSize, void* lpContext )
 {
     GETFILEINDIRECTCONTEXT* pc = (GETFILEINDIRECTCONTEXT*) lpContext;
 
@@ -525,10 +611,10 @@ void WINAPI GetFileIndirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKe
     assert(bMemory);
 
     long* pBlocks = (long*) lpbMemory;
-    INT32 count = nSize / 4;
+    int count = nSize / 4;
     INT64 SizeLeft = pc->FileSize;
 
-    for( INT32 index = 0; index < count; index++ )
+    for( int index = 0; index < count; index++ )
     {
         long block2 = pBlocks[index];
 	    if(partition->Read(bMemory,dwBlockSize,block2) )
@@ -553,11 +639,11 @@ void WINAPI GetFileIndirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKe
             }
             else
             {
-                //printf("found %d bytes in indirect item at block %d\n", (INT32)SizeLeft, block2 );
+                //printf("found %d bytes in indirect item at block %d\n", (int)SizeLeft, block2 );
                 //putchar('.');
                 if( pc->fp )
                 {
-                    fwrite(bMemory,1,(INT32)SizeLeft,pc->fp);
+                    fwrite(bMemory,1,(int)SizeLeft,pc->fp);
                 }
                 else if( pc->pCFI )
                 {
@@ -565,7 +651,7 @@ void WINAPI GetFileIndirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKe
                 }
                 else
                 {
-                    pc->pString->Append((LPSTR)bMemory,(INT32)SizeLeft);
+                    pc->pString->Append((LPSTR)bMemory,(int)SizeLeft);
                 }
                 break;
             }
@@ -576,10 +662,10 @@ void WINAPI GetFileIndirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKe
     pc->FileSize=SizeLeft;
 }
 
-void WINAPI GetFileDirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, INT32 nSize, void* lpContext )
+void WINAPI GetFileDirect(ReiserFsPartition* partition, REISERFS_CPU_KEY* lpKey, LPBYTE lpbMemory, int nSize, void* lpContext )
 {
     GETFILEINDIRECTCONTEXT* pc = (GETFILEINDIRECTCONTEXT*) lpContext;
-    INT32 toWrite=pc->FileSize>nSize?nSize:(INT32)pc->FileSize;
+    int toWrite=pc->FileSize>nSize?nSize:(int)pc->FileSize;
     pc->FileSize-=toWrite;
 
     //putchar('.');
@@ -634,9 +720,8 @@ PString ReiserFsPartition::GetFileAsString(ReiserFsFileInfo* pFile)
     return strResult;
 }
 
-//MPA 6-26-2003: GetFile makes calls to this for file processing: recursion control is effective here
-//Modified the original routine to support recursion control.
-bool ReiserFsPartition::CopyFilesRecursive( PList* Directory, LPSTR lpszName, bool bRecurseSubdirectories)
+
+bool ReiserFsPartition::CopyFilesRecursive( PList* Directory, LPCSTR lpszName )
 {
     REISERFS_CPU_KEY key = { 1, 2, 1, 500 };
 	BOOL bSuccess;
@@ -659,12 +744,9 @@ bool ReiserFsPartition::CopyFilesRecursive( PList* Directory, LPSTR lpszName, bo
 //			continue;
 //		}
 		PString strLocalPath( 0, "%s" SLASH_STRING "%s", lpszName, (char*) pFile->m_strName );
-
+		
         if( S_ISDIR(pFile->m_stat.sd_mode) )
         {
-			//Test for recursion
-			if(bRecurseSubdirectories == true)
-			{
 			printf("Directory %s\n", (char*) strLocalPath );
 			if( !MakeSurePathExists(strLocalPath) )
 				continue;
@@ -674,13 +756,11 @@ bool ReiserFsPartition::CopyFilesRecursive( PList* Directory, LPSTR lpszName, bo
 			key.k_offset = 1;
 			key.k_type = 500;
 
-
 			PList Subdir;
 			bSuccess = FALSE;
 			ParseTreeRecursive( &bSuccess, &key, m_sb.s_root_block, &::ListDirCallback, &Subdir );
-			CopyFilesRecursive( &Subdir, strLocalPath, bRecurseSubdirectories);
-			}
-		}
+			CopyFilesRecursive( &Subdir, strLocalPath );
+        }
         else if( pFile->isSymlink() )
         {
 			printf("Warning, link '%s' ignored\n", (const char*) strLocalPath );
@@ -726,7 +806,7 @@ bool ReiserFsPartition::CopyFilesRecursive( PList* Directory, LPSTR lpszName, bo
 	return true;
 }
 
-bool ReiserFsPartition::GetFile( LPSTR lpszReiserFsName, LPSTR lpszLocalName, bool bRecurseSubdirectories )
+bool ReiserFsPartition::GetFile( LPCSTR lpszReiserFsName, LPCSTR lpszLocalName, bool bRecurseSubdirectories )
 {
     // get array of tokens
     PList Tokens;
@@ -753,7 +833,7 @@ bool ReiserFsPartition::GetFile( LPSTR lpszReiserFsName, LPSTR lpszLocalName, bo
 
     ENUMERATE( &Tokens, PString, pToken )
     {
-        INT32 found = 0;
+        int found = 0;
 
         ENUMERATE( &Directory, ReiserFsFileInfo, pFile )
         {
@@ -786,11 +866,10 @@ bool ReiserFsPartition::GetFile( LPSTR lpszReiserFsName, LPSTR lpszLocalName, bo
 					if( pToken->m_pNext == 0 )
 					{
 						MakeSurePathExists(lpszLocalName);
-						return CopyFilesRecursive( &Directory, lpszLocalName, bRecurseSubdirectories);
+						return CopyFilesRecursive( &Directory, lpszLocalName );
 					}
 					break;
                 }
-				//Sym-link
                 else if( pFile->isSymlink() )
                 {
                     PString strData(GetFileAsString(pFile) );
@@ -867,7 +946,7 @@ bool ReiserFsPartition::GetFile( LPSTR lpszReiserFsName, LPSTR lpszLocalName, bo
     return false;    
 }
 
-bool ReiserFsPartition::GetFileEx( LPSTR lpszReiserFsName, ICreateFileInfo* pCFI )
+bool ReiserFsPartition::GetFileEx( LPCSTR lpszReiserFsName, ICreateFileInfo* pCFI )
 {
     // get array of tokens
     PList Tokens;
@@ -894,7 +973,7 @@ bool ReiserFsPartition::GetFileEx( LPSTR lpszReiserFsName, ICreateFileInfo* pCFI
 
     ENUMERATE( &Tokens, PString, pToken )
     {
-        INT32 found = 0;
+        int found = 0;
 
         ENUMERATE( &Directory, ReiserFsFileInfo, pFile )
         {
@@ -1000,7 +1079,7 @@ bool ReiserFsPartition::GetFileEx( LPSTR lpszReiserFsName, ICreateFileInfo* pCFI
 }
 
 
-bool ReiserFsPartition::ListDir( PList* pDirectory, LPSTR lpszDirectory )
+bool ReiserFsPartition::ListDir( PList* pDirectory, LPCSTR lpszDirectory )
 {                                        
     PList Tokens;
     PString strTemp(lpszDirectory);
@@ -1023,7 +1102,7 @@ bool ReiserFsPartition::ListDir( PList* pDirectory, LPSTR lpszDirectory )
 
     ENUMERATE( &Tokens, PString, pToken )
     {
-        INT32 found = 0;
+        int found = 0;
         char* token = *pToken;
 
         ENUMERATE( pDirectory, ReiserFsFileInfo, pFile )
@@ -1095,7 +1174,7 @@ bool ReiserFsPartition::ListDir( PList* pDirectory, LPSTR lpszDirectory )
     if( pDirectory->m_lCount )
     {
         // populate statistics
-        INT32 count = 0;
+        int count = 0;
         ENUMERATE( pDirectory, ReiserFsFileInfo, pFile )
         {
             if( count++ < 2 )
@@ -1182,7 +1261,7 @@ void ReiserFsPartition::Backup( const char* pszFilename )
 	else printf("ERROR, unable to open file '%s' for writing\n", pszFilename );
 }
 
-void ReiserFsPartition::BackupTreeRecursive( FILE* fpData, FILE* fpIndex, INT32 nBlock )
+void ReiserFsPartition::BackupTreeRecursive( FILE* fpData, FILE* fpIndex, int nBlock )
 {
     BYTE* bMemory = GetBlockUncached( nBlock );
 	if( !bMemory )
@@ -1192,7 +1271,7 @@ void ReiserFsPartition::BackupTreeRecursive( FILE* fpData, FILE* fpIndex, INT32 
 	}
 
 	// write block header
-	fwrite(&nBlock,sizeof(INT32),1,fpIndex);
+	fwrite(&nBlock,sizeof(int),1,fpIndex);
 
 	// write block data
 	fwrite(bMemory,m_dwBlockSize,1,fpData);
@@ -1203,7 +1282,7 @@ void ReiserFsPartition::BackupTreeRecursive( FILE* fpData, FILE* fpIndex, INT32 
 	{
 		LPBYTE lpbHeaderData = bMemory+sizeof(REISERFS_BLOCK_HEAD);
 		LPBYTE lpbPointerData = bMemory+sizeof(REISERFS_BLOCK_HEAD)+(pH->blk_nr_item*sizeof(REISERFS_KEY));
-		INT32 i;
+		int i;
 
 		for( i = 0; i < pH->blk_nr_item; i++ )
 		{
@@ -1212,7 +1291,7 @@ void ReiserFsPartition::BackupTreeRecursive( FILE* fpData, FILE* fpIndex, INT32 
             REISERFS_CPU_KEY cpukey;
             cpukey.k_dir_id = key->k_dir_id;
             cpukey.k_objectid = key->k_objectid;
-		    cpukey.k_type = (INT32) key->u.k_offset_v1.k_uniqueness; // WAS: v2
+		    cpukey.k_type = (int) key->u.k_offset_v1.k_uniqueness; // WAS: v2
 		    cpukey.k_offset = key->u.k_offset_v1.k_offset;
 
 			REISERFS_DISK_KEY* pointer = (REISERFS_DISK_KEY*) (lpbPointerData+i*sizeof(REISERFS_DISK_KEY));
@@ -1229,7 +1308,7 @@ void ReiserFsPartition::DumpTree()
 	DumpTreeRecursive(m_sb.s_root_block,0);
 }
 
-void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
+void ReiserFsPartition::DumpTreeRecursive( int nBlock, int nIndent )
 {
 	CHAR szIndent[64];
 	if( nIndent )
@@ -1248,7 +1327,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
 
 		LPBYTE lpbHeaderData = bMemory+sizeof(REISERFS_BLOCK_HEAD);
         bool result = false;
-		for( INT32 i = 0; i < pH->blk_nr_item; i++ )
+		for( int i = 0; i < pH->blk_nr_item; i++ )
 		{
 			LPREISERFS_ITEM_HEAD iH = (LPREISERFS_ITEM_HEAD)lpbHeaderData;
             REISERFS_KEY* key = &(iH->ih_key);
@@ -1262,7 +1341,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
 	        }
 	        else if ( iH->ih_version == ITEM_VERSION_2 )
 	        {
-		        cpukey.k_type = (INT32) iH->ih_key.u.k_offset_v2.k_type;
+		        cpukey.k_type = (int) iH->ih_key.u.k_offset_v2.k_type;
 		        cpukey.k_offset = iH->ih_key.u.k_offset_v2.k_offset;
 	        }
             else assert(false);
@@ -1276,9 +1355,9 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
                 // DATA_OF_BLOCK data of the directory item on disk. You should allocate one 
                 // byte more and make sure the buffer is zero-terminated for the code below to work.
 
-	            INT32 dh_offset = 0;
-	            INT32 dh_strpos = iH->ih_item_len;
-	            INT32 i = 0, dh_strlen;
+	            int dh_offset = 0;
+	            int dh_strpos = iH->ih_item_len;
+	            int i = 0, dh_strlen;
                 LPBYTE lpbMemory = bMemory + iH->ih_item_location; 
                                
                 CHAR szTempBuffer[512];
@@ -1294,7 +1373,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
                         pDH->deh_dir_id,
                         pDH->deh_objectid,
                         pDH->deh_location,
-                        (INT32) pDH->deh_state,
+                        (int) pDH->deh_state,
                         szTempBuffer );
 		            dh_strpos = pDH->deh_location;
 		            dh_offset += sizeof(REISERFS_DIRECTORY_HEAD);
@@ -1302,7 +1381,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
             }
             else if( cpukey.k_type == 0 )
             {
-                INT32 nSize = iH->ih_item_len;
+                int nSize = iH->ih_item_len;
                 LPBYTE lpbMemory = bMemory + iH->ih_item_location; 
                 REISERFS_STAT2 m_stat;
 	            if( nSize == sizeof(REISERFS_STAT2) )
@@ -1348,7 +1427,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
 	}
 	else
 	{
-		INT32 i;
+		int i;
 		printf("%sIS DATA BLOCK (%d ITEMS)\n", szIndent, pH->blk_nr_item );
 
 		LPBYTE lpbHeaderData = bMemory+sizeof(REISERFS_BLOCK_HEAD);
@@ -1361,7 +1440,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
             REISERFS_CPU_KEY cpukey;
             cpukey.k_dir_id = key->k_dir_id;
             cpukey.k_objectid = key->k_objectid;
-		    cpukey.k_type = (INT32) key->u.k_offset_v1.k_uniqueness; // WAS: v2
+		    cpukey.k_type = (int) key->u.k_offset_v1.k_uniqueness; // WAS: v2
 		    cpukey.k_offset = key->u.k_offset_v1.k_offset;
 
 			REISERFS_DISK_KEY* pointer = (REISERFS_DISK_KEY*) (lpbPointerData+i*sizeof(REISERFS_DISK_KEY));
@@ -1378,7 +1457,7 @@ void ReiserFsPartition::DumpTreeRecursive( INT32 nBlock, INT32 nIndent )
 }
 
 
-void ReiserFsPartition::ParseTreeRecursive( BOOL* lpbSuccess, REISERFS_CPU_KEY* lpKeyToFind, INT32 nBlock, LPFNReiserFsSearchCallback lpCallback, void* lpContext )
+void ReiserFsPartition::ParseTreeRecursive( BOOL* lpbSuccess, REISERFS_CPU_KEY* lpKeyToFind, int nBlock, LPFNReiserFsSearchCallback lpCallback, void* lpContext )
 {
 	m_lpKeyToFind = lpKeyToFind;
 	m_lpCallback = lpCallback;
@@ -1395,12 +1474,12 @@ void ReiserFsPartition::ParseTreeRecursive( BOOL* lpbSuccess, REISERFS_CPU_KEY* 
 
 }
 
-BOOL ReiserFsPartition::IParseTreeRecursive( INT32 nBlock )
+BOOL ReiserFsPartition::IParseTreeRecursive( int nBlock )
 {
 	BOOL bResult = FALSE;
 #ifdef _DEBUG
 	char szIndent[60];
-	INT32 nMax = sizeof(szIndent)-1;
+	int nMax = sizeof(szIndent)-1;
 	nMax = m_nIndent>nMax?nMax:m_nIndent;
 	memset( szIndent, '\t', nMax );
 	szIndent[nMax] = 0;
@@ -1428,7 +1507,7 @@ BOOL ReiserFsPartition::IParseTreeRecursive( INT32 nBlock )
 			DEBUGTRACE(("%sANALYZING LEAF BLOCK\n", szIndent ))
 			LPBYTE lpbHeaderData = bMemory+sizeof(REISERFS_BLOCK_HEAD);
 
-			for( INT32 i = 0; i < pH->blk_nr_item; i++ )
+			for( int i = 0; i < pH->blk_nr_item; i++ )
 			{
 				LPREISERFS_ITEM_HEAD iH = (LPREISERFS_ITEM_HEAD)lpbHeaderData;
 				REISERFS_KEY* key = &(iH->ih_key);
@@ -1442,12 +1521,12 @@ BOOL ReiserFsPartition::IParseTreeRecursive( INT32 nBlock )
 				}
 				else if ( iH->ih_version == ITEM_VERSION_2 )
 				{
-					cpukey.k_type = (INT32) iH->ih_key.u.k_offset_v2.k_type;
+					cpukey.k_type = (int) iH->ih_key.u.k_offset_v2.k_type;
 					cpukey.k_offset = iH->ih_key.u.k_offset_v2.k_offset;
 				}
 				else assert(false);
 
-				INT32 cres = comp_keys_no_offset(m_lpKeyToFind,&cpukey);
+				int cres = comp_keys_no_offset(m_lpKeyToFind,&cpukey);
 				if( cres == 0  )
 				{
 					DEBUGTRACE(("%s**** CALLBACK ****\n", szIndent ))
@@ -1469,7 +1548,7 @@ BOOL ReiserFsPartition::IParseTreeRecursive( INT32 nBlock )
 			LPBYTE lpbHeaderData = bMemory+sizeof(REISERFS_BLOCK_HEAD);
 			LPBYTE lpbPointerData = bMemory+sizeof(REISERFS_BLOCK_HEAD)+(pH->blk_nr_item*sizeof(REISERFS_KEY));
 
-			INT32 i, nLastCres = -1;
+			int i, nLastCres = -1;
 			bool oldFound = false;
 
 			for( i = 0; i < pH->blk_nr_item; i++ )
@@ -1479,10 +1558,10 @@ BOOL ReiserFsPartition::IParseTreeRecursive( INT32 nBlock )
 				REISERFS_CPU_KEY cpukey;
 				cpukey.k_dir_id = key->k_dir_id;
 				cpukey.k_objectid = key->k_objectid;
-				cpukey.k_type = (INT32) key->u.k_offset_v2.k_type;
+				cpukey.k_type = (int) key->u.k_offset_v2.k_type;
 				cpukey.k_offset = (U64) key->u.k_offset_v2.k_offset;
 
-				INT32 cres = comp_keys(&cpukey,m_lpKeyToFind);
+				int cres = comp_keys(&cpukey,m_lpKeyToFind);
 				if( cres == 1 || cres == 0 )
 				{
 					REISERFS_DISK_KEY* pointer = (REISERFS_DISK_KEY*) (lpbPointerData+i*sizeof(REISERFS_DISK_KEY));
@@ -1524,11 +1603,11 @@ bailout:
 // potential code for bitmap dumiong
 //    BYTE* pBitmap = m_lpbBitmap;
 //    
-//    INT32 BitmapSize = 0x9000;
-//    INT32 BitmapOffset = 0;
-//    INT32 iLastBitUsed = -1;
+//    int BitmapSize = 0x9000;
+//    int BitmapOffset = 0;
+//    int iLastBitUsed = -1;
 //    BYTE bitmap_map[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
-//    INT32 iBit = 0;
+//    int iBit = 0;
 //    while( iBit < BitmapSize )
 //    {
 //        if( pBitmap[iBit/8] & bitmap_map[iBit%8] )
@@ -1572,7 +1651,7 @@ BOOL ReiserFsMetafile::Open( ReiserFsPartition* partition, const char* pszFilena
 	{
 		// determine file size
 		fseek(fpIndex,0,SEEK_END);
-		INT64 filesize = ftell(fpIndex);
+		long filesize = ftell(fpIndex);
 		fseek(fpIndex,0,SEEK_SET);
 
 		if( filesize < sizeof(REISERFS_SUPER_BLOCK) )
@@ -1587,17 +1666,16 @@ BOOL ReiserFsMetafile::Open( ReiserFsPartition* partition, const char* pszFilena
         {
 		    partition->m_sb = m_Superblock;
         }
-		INT64 indexsize = filesize - sizeof(REISERFS_SUPER_BLOCK);
-		m_iNumberOfIndices = (INT32)(indexsize / sizeof(INT32));
-		m_pBlockIndices = new LONG_PTR[m_iNumberOfIndices];
+		long indexsize = filesize - sizeof(REISERFS_SUPER_BLOCK);
+		m_iNumberOfIndices = (int)(indexsize / sizeof(int));
+		m_pBlockIndices = new int[m_iNumberOfIndices];
 		if( !m_pBlockIndices )
 		{
 			printf("ERROR, not enough memory to allocate %d bytes for indices, aborting\n", indexsize );
 			fclose(fpIndex);
 			return FALSE;
 		}
-		//64bit watch
-		fread((void*)m_pBlockIndices,indexsize,1,fpIndex);
+		fread(m_pBlockIndices,indexsize,1,fpIndex);
 		fclose(fpIndex);
 
 		printf("Read %d indices successfully.\n", m_iNumberOfIndices );
@@ -1623,7 +1701,7 @@ BOOL ReiserFsMetafile::Read( LPBYTE lpbMemory, DWORD dwSize, INT64 BlockNumber )
 		printf("ERROR, expected block size %d, got %d\n", m_dwBlocksize, dwSize );
 		return FALSE;
 	}
-	INT32 index, blocknr = (INT32) BlockNumber;
+	int index, blocknr = (int) BlockNumber;
 	for( index = 0; index < m_iNumberOfIndices; index++ )
 	{
 		if( m_pBlockIndices[index] == blocknr )
